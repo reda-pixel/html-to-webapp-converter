@@ -1,0 +1,77 @@
+.build-panel {
+  text-align: center;
+}
+
+.build-panel h2 {
+  color: #2d3748;
+  margin-bottom: 2rem;
+}
+
+.build-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 1rem 2rem;
+  font-size: 1.1rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  border: none;
+  transition: all 0.3s ease;
+  font-weight: 600;
+}
+
+.build-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.build-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.build-log {
+  background: #2d3748;
+  color: #48bb78;
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  margin: 2rem 0;
+  text-align: left;
+  font-family: 'Courier New', monospace;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.build-log h3 {
+  color: white;
+  margin-bottom: 1rem;
+}
+
+.build-log pre {
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.build-log div {
+  margin: 0.25rem 0;
+}
+
+.success-message {
+  background: #e6fffa;
+  border-left: 4px solid #48bb78;
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  color: #22543d;
+  font-weight: 600;
+  margin-top: 1.5rem;
+  font-size: 1.1rem;
+}
+
+.error-message {
+  background: #fed7d7;
+  border-left: 4px solid #f56565;
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  color: #742a2a;
+  font-weight: 600;
+  margin-top: 1.5rem;
+}

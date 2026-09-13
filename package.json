@@ -1,0 +1,18 @@
+{
+  "name": "html-to-webapp-converter",
+  "version": "1.0.0",
+  "description": "تحويل ملفات HTML إلى مشاريع ويب كاملة قابلة للتشغيل والبناء والنشر",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "npm run dev:server & npm run dev:client",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "build": "cd client && npm run build",
+    "server": "cd server && node index.js",
+    "start": "cd server && node index.js"
+  },
+  "keywords": ["html", "converter", "webapp", "build", "deploy"],
+  "author": "reda-pixel",
+  "license": "MIT"
+}
