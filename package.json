@@ -10,9 +10,19 @@
     "dev:client": "cd client && npm run dev",
     "build": "cd client && npm run build",
     "server": "cd server && node index.js",
-    "start": "cd server && node index.js"
+    "start": "cd server && node index.js",
+    "test:workflow": "node test-workflow.js"
   },
-  "keywords": ["html", "converter", "webapp", "build", "deploy"],
+  "keywords": [
+    "html",
+    "converter",
+    "webapp",
+    "build",
+    "deploy"
+  ],
   "author": "reda-pixel",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "form-data": "^4.0.0"
+  }
 }
