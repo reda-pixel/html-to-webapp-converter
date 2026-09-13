@@ -6,6 +6,7 @@ function FileUpload({ onUploadComplete }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [dragActive, setDragActive] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -35,21 +36,46 @@ function FileUpload({ onUploadComplete }) {
   };
 
   const uploadFile = async (file) => {
+    const validTypes = ['text/html', 'application/zip', 'application/x-zip-compressed'];
+    if (!validTypes.includes(file.type)) {
+      setError('يجب أن يكون الملف HTML أو ZIP');
+      return;
+    }
+
+    const maxSize = 50 * 1024 * 1024;
+    if (file.size > maxSize) {
+      setError('حجم الملف يتجاوز الحد الأقصى (50 MB)');
+      return;
+    }
+
     setLoading(true);
     setError(null);
+    setUploadProgress(0);
 
     const formData = new FormData();
     formData.append('file', file);
 
     try {
+      console.log('📤 Uploading file:', file.name);
+      
       const response = await axios.post('/api/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (progressEvent) => {
+          const progress = Math.round((progressEvent.loaded / progressEvent.total) * 100);
+          setUploadProgress(progress);
+          console.log(`Upload progress: ${progress}%`);
+        }
       });
+
+      console.log('✅ File uploaded successfully');
       onUploadComplete(response.data.data);
     } catch (err) {
-      setError(err.response?.data?.error || 'حدث خطأ في الرفع');
+      const errorMsg = err.response?.data?.error || 'خطأ في الرفع';
+      console.error('❌ Upload error:', errorMsg);
+      setError(errorMsg);
     } finally {
       setLoading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -74,10 +100,18 @@ function FileUpload({ onUploadComplete }) {
           id="file-input"
         />
         <label htmlFor="file-input" className="file-label">
-          {loading ? 'جاري الرفع...' : 'اختر ملفًا'}
+          {loading ? `جاري الرفع... ${uploadProgress}%` : 'اختر ملفاً'}
         </label>
       </div>
-      {error && <div className="error-message">{error}</div>}
+      
+      {loading && (
+        <div className="progress-bar">
+          <div className="progress-fill" style={{ width: `${uploadProgress}%` }}></div>
+        </div>
+      )}
+      
+      {error && <div className="error-message">❌ {error}</div>}
+      
       <div className="file-info">
         <p>✅ الملفات المدعومة: HTML, ZIP</p>
         <p>✅ الحد الأقصى للحجم: 50 MB</p>

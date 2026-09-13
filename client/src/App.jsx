@@ -7,24 +7,55 @@ import DeployPanel from './components/DeployPanel';
 
 function App() {
   const [projectId, setProjectId] = useState(null);
-  const [fileInfo, setFileInfo] = useState(null);
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [analysisData, setAnalysisData] = useState(null);
+  const [buildData, setBuildData] = useState(null);
   const [currentStep, setCurrentStep] = useState('upload');
-  const [projectData, setProjectData] = useState(null);
+  const [error, setError] = useState(null);
 
   const handleFileUploaded = (data) => {
+    console.log('✅ File uploaded:', data);
     setProjectId(data.projectId);
-    setFileInfo(data);
+    setUploadedFile(data);
+    setAnalysisData(null);
+    setBuildData(null);
+    setError(null);
     setCurrentStep('analyze');
   };
 
-  const handleProjectAnalyzed = (data) => {
-    setProjectData(data);
+  const handleAnalysisComplete = (data) => {
+    console.log('✅ Analysis complete:', data);
+    setAnalysisData(data);
+    setError(null);
     setCurrentStep('build');
   };
 
+  const handleAnalysisError = (errorMsg) => {
+    console.error('❌ Analysis error:', errorMsg);
+    setError(errorMsg);
+    setCurrentStep('analyze');
+  };
+
   const handleBuildComplete = (data) => {
-    setProjectData(prev => ({ ...prev, buildData: data }));
+    console.log('✅ Build complete:', data);
+    setBuildData(data);
+    setError(null);
     setCurrentStep('deploy');
+  };
+
+  const handleBuildError = (errorMsg) => {
+    console.error('❌ Build error:', errorMsg);
+    setError(errorMsg);
+    setCurrentStep('build');
+  };
+
+  const resetProject = () => {
+    setProjectId(null);
+    setUploadedFile(null);
+    setAnalysisData(null);
+    setBuildData(null);
+    setCurrentStep('upload');
+    setError(null);
   };
 
   return (
@@ -38,15 +69,15 @@ function App() {
 
       <main className="app-main">
         <div className="steps-indicator">
-          <div className={`step ${currentStep === 'upload' ? 'active' : ''}`}>
+          <div className={`step ${currentStep === 'upload' ? 'active' : 'completed'}`}>
             <span className="step-number">1</span>
             <span className="step-label">رفع الملف</span>
           </div>
-          <div className={`step ${currentStep === 'analyze' ? 'active' : ''}`}>
+          <div className={`step ${currentStep === 'analyze' ? 'active' : currentStep === 'build' || currentStep === 'deploy' ? 'completed' : ''}`}>
             <span className="step-number">2</span>
             <span className="step-label">تحليل</span>
           </div>
-          <div className={`step ${currentStep === 'build' ? 'active' : ''}`}>
+          <div className={`step ${currentStep === 'build' ? 'active' : currentStep === 'deploy' ? 'completed' : ''}`}>
             <span className="step-number">3</span>
             <span className="step-label">البناء</span>
           </div>
@@ -56,28 +87,41 @@ function App() {
           </div>
         </div>
 
+        {error && (
+          <div className="error-banner">
+            <span>⚠️ {error}</span>
+            <button onClick={() => setError(null)} className="close-btn">×</button>
+          </div>
+        )}
+
         <div className="content-wrapper">
           {currentStep === 'upload' && (
             <FileUpload onUploadComplete={handleFileUploaded} />
           )}
-          {currentStep === 'analyze' && projectId && (
+          
+          {currentStep === 'analyze' && projectId && uploadedFile && (
             <ProjectAnalyzer 
-              projectId={projectId} 
-              fileInfo={fileInfo}
-              onAnalysisComplete={handleProjectAnalyzed}
+              projectId={projectId}
+              filePath={uploadedFile.path}
+              onAnalysisComplete={handleAnalysisComplete}
+              onError={handleAnalysisError}
             />
           )}
-          {currentStep === 'build' && projectId && (
+          
+          {currentStep === 'build' && projectId && analysisData && (
             <BuildPanel 
               projectId={projectId}
-              projectData={projectData}
+              analysisData={analysisData}
               onBuildComplete={handleBuildComplete}
+              onError={handleBuildError}
             />
           )}
-          {currentStep === 'deploy' && projectId && (
+          
+          {currentStep === 'deploy' && projectId && buildData && (
             <DeployPanel 
               projectId={projectId}
-              projectData={projectData}
+              buildData={buildData}
+              onReset={resetProject}
             />
           )}
         </div>
