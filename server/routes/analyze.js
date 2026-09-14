@@ -3,45 +3,46 @@ const router = express.Router();
 
 /**
  * POST /api/analyze
- * Analyzes HTML content and returns structured data
- * 
- * Request body:
+ *
+ * Accepts:
  * {
- *   html: string (required) - HTML content to analyze
+ *   html?: string,
+ *   files?: {
+ *     "package.json": "...",
+ *     "src/App.jsx": "...",
+ *     ...
+ *   }
  * }
- * 
- * Response:
- * {
- *   success: boolean,
- *   data: {
- *     structure: object - Document structure
- *     elements: array - List of elements
- *     styles: object - Extracted styles
- *     scripts: array - Script tags and their content
- *     meta: object - Meta information
- *   },
- *   error: string (optional)
- * }
+ *
+ * Returns a normalized project analysis for the real build pipeline.
  */
+
 router.post('/', (req, res) => {
   try {
-    const { html } = req.body;
+    const { html, files } = req.body || {};
 
-    if (!html) {
+    if (!html && (!files || typeof files !== 'object')) {
       return res.status(400).json({
         success: false,
-        error: 'HTML content is required'
+        error: 'Provide html or files'
       });
     }
 
-    // Parse and analyze HTML
-    const analysis = analyzeHTML(html);
+    const projectFiles = normalizeFiles(files || {});
+
+    if (html && Object.keys(projectFiles).length === 0) {
+      projectFiles['index.html'] = html;
+    }
+
+    const analysis = analyzeProject(projectFiles);
 
     res.json({
       success: true,
       data: analysis
     });
   } catch (error) {
+    console.error('Analyze error:', error);
+
     res.status(500).json({
       success: false,
       error: error.message
@@ -50,74 +51,538 @@ router.post('/', (req, res) => {
 });
 
 /**
- * Analyzes HTML content and extracts useful information
- * @param {string} html - HTML content
- * @returns {object} Analysis results
+ * Normalize incoming file data.
+ */
+function normalizeFiles(files) {
+  const result = {};
+
+  for (const [filePath, value] of Object.entries(files || {})) {
+    if (!filePath || typeof filePath !== 'string') continue;
+
+    if (typeof value === 'string') {
+      result[filePath.replace(/\\/g, '/')] = value;
+    } else if (value && typeof value.content === 'string') {
+      result[filePath.replace(/\\/g, '/')] = value.content;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Main project analyzer.
+ */
+function analyzeProject(files) {
+  const filePaths = Object.keys(files);
+
+  const packageJson = readPackageJson(files);
+  const packageScripts = packageJson?.scripts || {};
+  const dependencies = {
+    ...(packageJson?.dependencies || {}),
+    ...(packageJson?.devDependencies || {}),
+    ...(packageJson?.peerDependencies || {})
+  };
+
+  const framework = detectFramework(files, packageJson);
+  const language = detectLanguage(filePaths);
+  const projectType = detectProjectType(files, packageJson, framework);
+
+  const buildCommand = detectBuildCommand(
+    packageJson,
+    framework,
+    files
+  );
+
+  const startCommand = detectStartCommand(packageJson, framework);
+
+  return {
+    version: 1,
+
+    project: {
+      type: projectType,
+      framework: framework.name,
+      frameworkVersion: framework.version || null,
+      language,
+      packageManager: detectPackageManager(filePaths),
+      entryPoints: detectEntryPoints(filePaths, framework),
+      buildCommand,
+      startCommand
+    },
+
+    framework: framework,
+
+    package: packageJson
+      ? {
+          name: packageJson.name || null,
+          version: packageJson.version || null,
+          private: packageJson.private === true,
+          scripts: packageScripts,
+          dependencies,
+          dependencyCount: Object.keys(dependencies).length
+        }
+      : null,
+
+    files: {
+      count: filePaths.length,
+      paths: filePaths,
+      byExtension: countExtensions(filePaths),
+      sourceFiles: filePaths.filter(isSourceFile),
+      assetFiles: filePaths.filter(isAssetFile)
+    },
+
+    html: analyzeHTMLFiles(files),
+
+    source: analyzeSourceFiles(files),
+
+    requirements: {
+      needsInstall: Boolean(packageJson),
+      needsBuild: Boolean(buildCommand),
+      isStatic: projectType === 'static-html',
+      isNodeProject: Boolean(packageJson),
+      hasTypeScript: filePaths.some(p => /\.(ts|tsx)$/i.test(p)),
+      hasReact: Boolean(dependencies.react),
+      hasNext: Boolean(dependencies.next),
+      hasVite: Boolean(dependencies.vite)
+    },
+
+    build: {
+      command: buildCommand,
+      outputDirectory: detectOutputDirectory(framework, packageJson, files),
+      productionReady: Boolean(buildCommand)
+    }
+  };
+}
+
+/**
+ * Read package.json safely.
+ */
+function readPackageJson(files) {
+  const packagePath = Object.keys(files).find(
+    p => p.toLowerCase() === 'package.json'
+  );
+
+  if (!packagePath) return null;
+
+  try {
+    return JSON.parse(files[packagePath]);
+  } catch (error) {
+    return {
+      __invalid: true,
+      __error: 'Invalid package.json'
+    };
+  }
+}
+
+/**
+ * Detect framework.
+ */
+function detectFramework(files, pkg) {
+  const deps = {
+    ...(pkg?.dependencies || {}),
+    ...(pkg?.devDependencies || {}),
+    ...(pkg?.peerDependencies || {})
+  };
+
+  const paths = Object.keys(files);
+
+  if (deps.next || paths.some(p => p.includes('next.config.'))) {
+    return {
+      name: 'next',
+      type: 'framework',
+      version: deps.next || null
+    };
+  }
+
+  if (
+    deps.react &&
+    (
+      deps.vite ||
+      paths.some(p => /vite\.config\./i.test(p))
+    )
+  ) {
+    return {
+      name: 'react-vite',
+      type: 'framework',
+      version: deps.react
+    };
+  }
+
+  if (deps.react) {
+    return {
+      name: 'react',
+      type: 'library',
+      version: deps.react
+    };
+  }
+
+  if (deps.vue || deps.nuxt) {
+    return {
+      name: deps.nuxt ? 'nuxt' : 'vue',
+      type: 'framework',
+      version: deps.nuxt || deps.vue || null
+    };
+  }
+
+  if (deps.svelte || deps['@sveltejs/kit']) {
+    return {
+      name: deps['@sveltejs/kit'] ? 'sveltekit' : 'svelte',
+      type: 'framework',
+      version: deps['@sveltejs/kit'] || deps.svelte || null
+    };
+  }
+
+  if (deps.angular || deps['@angular/core']) {
+    return {
+      name: 'angular',
+      type: 'framework',
+      version: deps['@angular/core'] || deps.angular || null
+    };
+  }
+
+  if (deps.vite || paths.some(p => /vite\.config\./i.test(p))) {
+    return {
+      name: 'vite',
+      type: 'build-tool',
+      version: deps.vite || null
+    };
+  }
+
+  if (
+    paths.some(p => /\.(tsx|jsx)$/i.test(p)) &&
+    !pkg
+  ) {
+    return {
+      name: 'react-like',
+      type: 'detected',
+      version: null
+    };
+  }
+
+  if (
+    paths.some(p => /\.(ts|tsx)$/i.test(p))
+  ) {
+    return {
+      name: 'typescript',
+      type: 'language',
+      version: deps.typescript || null
+    };
+  }
+
+  if (paths.some(p => /\.html?$/i.test(p))) {
+    return {
+      name: 'html',
+      type: 'static',
+      version: null
+    };
+  }
+
+  return {
+    name: 'unknown',
+    type: 'unknown',
+    version: null
+  };
+}
+
+/**
+ * Detect language.
+ */
+function detectLanguage(paths) {
+  const counts = {};
+
+  for (const file of paths) {
+    const ext = getExtension(file);
+
+    if (!ext) continue;
+
+    const languageMap = {
+      '.js': 'JavaScript',
+      '.jsx': 'JavaScript/JSX',
+      '.ts': 'TypeScript',
+      '.tsx': 'TypeScript/TSX',
+      '.html': 'HTML',
+      '.htm': 'HTML',
+      '.css': 'CSS',
+      '.scss': 'SCSS',
+      '.sass': 'Sass',
+      '.less': 'Less',
+      '.vue': 'Vue',
+      '.svelte': 'Svelte',
+      '.json': 'JSON'
+    };
+
+    const language = languageMap[ext];
+
+    if (language) {
+      counts[language] = (counts[language] || 0) + 1;
+    }
+  }
+
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, count]) => ({ name, count }));
+}
+
+/**
+ * Detect project type.
+ */
+function detectProjectType(files, pkg, framework) {
+  if (pkg) {
+    if (framework.name === 'next') return 'next-app';
+    if (framework.name === 'react-vite') return 'react-vite-app';
+    if (framework.name === 'react') return 'react-app';
+    if (framework.name === 'vue') return 'vue-app';
+    if (framework.name === 'nuxt') return 'nuxt-app';
+    if (framework.name === 'svelte') return 'svelte-app';
+    if (framework.name === 'sveltekit') return 'sveltekit-app';
+    if (framework.name === 'angular') return 'angular-app';
+    if (framework.name === 'vite') return 'vite-app';
+
+    return 'node-project';
+  }
+
+  if (Object.keys(files).some(p => /\.html?$/i.test(p))) {
+    return 'static-html';
+  }
+
+  return 'unknown';
+}
+
+/**
+ * Detect package manager.
+ */
+function detectPackageManager(paths) {
+  if (paths.includes('pnpm-lock.yaml')) return 'pnpm';
+  if (paths.includes('yarn.lock')) return 'yarn';
+  if (paths.includes('bun.lockb') || paths.includes('bun.lock')) return 'bun';
+  if (paths.includes('package-lock.json')) return 'npm';
+
+  return 'npm';
+}
+
+/**
+ * Detect build command.
+ */
+function detectBuildCommand(pkg, framework, files) {
+  if (!pkg || !pkg.scripts) return null;
+
+  if (typeof pkg.scripts.build === 'string') {
+    return 'npm run build';
+  }
+
+  if (framework.name === 'next') {
+    return 'npm run build';
+  }
+
+  if (
+    framework.name === 'vite' ||
+    framework.name === 'react-vite'
+  ) {
+    return 'npm run build';
+  }
+
+  return null;
+}
+
+/**
+ * Detect start command.
+ */
+function detectStartCommand(pkg, framework) {
+  if (!pkg || !pkg.scripts) return null;
+
+  if (pkg.scripts.start) {
+    return 'npm start';
+  }
+
+  if (framework.name === 'next') {
+    return 'npm start';
+  }
+
+  if (pkg.scripts.dev) {
+    return 'npm run dev';
+  }
+
+  return null;
+}
+
+/**
+ * Detect likely entry points.
+ */
+function detectEntryPoints(paths, framework) {
+  const candidates = [];
+
+  const preferred = [
+    'index.html',
+    'src/main.jsx',
+    'src/main.tsx',
+    'src/main.js',
+    'src/main.ts',
+    'src/index.jsx',
+    'src/index.tsx',
+    'src/index.js',
+    'src/index.ts',
+    'pages/index.js',
+    'pages/index.tsx',
+    'app/page.tsx'
+  ];
+
+  for (const file of preferred) {
+    if (paths.includes(file)) {
+      candidates.push(file);
+    }
+  }
+
+  if (framework.name === 'next') {
+    for (const file of paths) {
+      if (/^(app|pages)\/.+\.(js|jsx|ts|tsx)$/i.test(file)) {
+        candidates.push(file);
+      }
+    }
+  }
+
+  return [...new Set(candidates)];
+}
+
+/**
+ * Detect Vite/Next output directory.
+ */
+function detectOutputDirectory(framework, pkg, files) {
+  if (framework.name === 'next') {
+    return '.next';
+  }
+
+  if (
+    framework.name === 'vite' ||
+    framework.name === 'react-vite'
+  ) {
+    return 'dist';
+  }
+
+  if (pkg?.scripts?.build) {
+    return 'dist';
+  }
+
+  if (Object.keys(files).some(p => p === 'index.html')) {
+    return '.';
+  }
+
+  return null;
+}
+
+/**
+ * Analyze HTML files.
+ */
+function analyzeHTMLFiles(files) {
+  const result = [];
+
+  for (const [filePath, content] of Object.entries(files)) {
+    if (!/\.html?$/i.test(filePath)) continue;
+
+    const analysis = analyzeHTML(content);
+
+    result.push({
+      path: filePath,
+      ...analysis
+    });
+  }
+
+  return result;
+}
+
+/**
+ * HTML analyzer.
  */
 function analyzeHTML(html) {
-  const analysis = {
-    structure: {},
-    elements: [],
-    styles: {},
-    scripts: [],
-    meta: {}
-  };
+  const title =
+    (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || null;
 
-  // Extract meta information
-  const titleMatch = html.match(/<title>(.*?)<\/title>/i);
-  if (titleMatch) {
-    analysis.meta.title = titleMatch[1];
-  }
+  const scripts =
+    html.match(/<script[^>]*>/gi) || [];
 
-  const descriptionMatch = html.match(/<meta\s+name=["']description["']\s+content=["'](.*?)["']/i);
-  if (descriptionMatch) {
-    analysis.meta.description = descriptionMatch[1];
-  }
+  const styles =
+    html.match(/<style[^>]*>/gi) || [];
 
-  // Extract all meta tags
-  const metaTags = html.match(/<meta[^>]*>/gi) || [];
-  analysis.meta.tags = metaTags;
+  const links =
+    html.match(/<link[^>]*>/gi) || [];
 
-  // Extract style tags
-  const styleTags = html.match(/<style[^>]*>([\s\S]*?)<\/style>/gi) || [];
-  analysis.styles.inline = styleTags;
+  const elements = {};
 
-  // Extract external stylesheets
-  const linkTags = html.match(/<link[^>]*rel=["']stylesheet["'][^>]*>/gi) || [];
-  analysis.styles.external = linkTags;
+  const regex = /<([a-zA-Z][a-zA-Z0-9-]*)\b/g;
 
-  // Extract script tags
-  const scriptTags = html.match(/<script[^>]*>[\s\S]*?<\/script>/gi) || [];
-  analysis.scripts = scriptTags.map((tag, index) => ({
-    id: index,
-    tag: tag,
-    external: /src=["']([^"']+)["']/.test(tag)
-  }));
-
-  // Extract all HTML elements
-  const elementRegex = /<([a-zA-Z0-9]+)([^>]*)>/g;
   let match;
-  const elementCounts = {};
 
-  while ((match = elementRegex.exec(html)) !== null) {
-    const tagName = match[1].toLowerCase();
-    elementCounts[tagName] = (elementCounts[tagName] || 0) + 1;
+  while ((match = regex.exec(html))) {
+    const tag = match[1].toLowerCase();
+
+    if (['script', 'style', 'meta', 'link'].includes(tag)) {
+      continue;
+    }
+
+    elements[tag] = (elements[tag] || 0) + 1;
   }
 
-  analysis.elements = Object.entries(elementCounts).map(([tag, count]) => ({
-    tag,
-    count
-  }));
-
-  // Extract document structure
-  analysis.structure = {
-    hasHead: /<head[^>]*>/i.test(html),
-    hasBody: /<body[^>]*>/i.test(html),
-    hasDoctype: /<!doctype/i.test(html),
-    htmlLang: (html.match(/<html[^>]*lang=["']?([^"'\s>]+)/i) || [null, null])[1]
+  return {
+    title,
+    hasDoctype: /<!doctype\s+html/i.test(html),
+    hasHead: /<head[\s>]/i.test(html),
+    hasBody: /<body[\s>]/i.test(html),
+    language:
+      (html.match(/<html[^>]+lang=["']([^"']+)/i) || [])[1] || null,
+    scriptCount: scripts.length,
+    styleCount: styles.length,
+    linkCount: links.length,
+    elements
   };
+}
 
-  return analysis;
+/**
+ * Analyze source files.
+ */
+function analyzeSourceFiles(files) {
+  const result = [];
+
+  for (const [filePath, content] of Object.entries(files)) {
+    if (!isSourceFile(filePath)) continue;
+
+    result.push({
+      path: filePath,
+      extension: getExtension(filePath),
+      size: Buffer.byteLength(content, 'utf8'),
+      lines: content.split(/\r?\n/).length
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Count file extensions.
+ */
+function countExtensions(paths) {
+  const result = {};
+
+  for (const path of paths) {
+    const ext = getExtension(path) || '[no extension]';
+    result[ext] = (result[ext] || 0) + 1;
+  }
+
+  return result;
+}
+
+function getExtension(filePath) {
+  const match = filePath.toLowerCase().match(/(\.[a-z0-9]+)$/);
+  return match ? match[1] : '';
+}
+
+function isSourceFile(filePath) {
+  return /\.(js|jsx|ts|tsx|vue|svelte|html|htm|css|scss|sass|less)$/i.test(
+    filePath
+  );
+}
+
+function isAssetFile(filePath) {
+  return /\.(png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf|otf|mp4|webm|mp3|wav|json)$/i.test(
+    filePath
+  );
 }
 
 module.exports = router;
