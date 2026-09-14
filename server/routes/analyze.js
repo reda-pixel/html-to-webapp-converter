@@ -1,4 +1,6 @@
-const express = require('express');
+```js
+import express from "express";
+
 const router = express.Router();
 
 /**
@@ -13,25 +15,23 @@ const router = express.Router();
  *     ...
  *   }
  * }
- *
- * Returns a normalized project analysis for the real build pipeline.
  */
 
-router.post('/', (req, res) => {
+router.post("/", (req, res) => {
   try {
     const { html, files } = req.body || {};
 
-    if (!html && (!files || typeof files !== 'object')) {
+    if (!html && (!files || typeof files !== "object")) {
       return res.status(400).json({
         success: false,
-        error: 'Provide html or files'
+        error: "Provide html or files"
       });
     }
 
     const projectFiles = normalizeFiles(files || {});
 
     if (html && Object.keys(projectFiles).length === 0) {
-      projectFiles['index.html'] = html;
+      projectFiles["index.html"] = html;
     }
 
     const analysis = analyzeProject(projectFiles);
@@ -41,7 +41,7 @@ router.post('/', (req, res) => {
       data: analysis
     });
   } catch (error) {
-    console.error('Analyze error:', error);
+    console.error("Analyze error:", error);
 
     res.status(500).json({
       success: false,
@@ -50,33 +50,31 @@ router.post('/', (req, res) => {
   }
 });
 
-/**
- * Normalize incoming file data.
- */
 function normalizeFiles(files) {
   const result = {};
 
   for (const [filePath, value] of Object.entries(files || {})) {
-    if (!filePath || typeof filePath !== 'string') continue;
+    if (!filePath || typeof filePath !== "string") continue;
 
-    if (typeof value === 'string') {
-      result[filePath.replace(/\\/g, '/')] = value;
-    } else if (value && typeof value.content === 'string') {
-      result[filePath.replace(/\\/g, '/')] = value.content;
+    const normalizedPath = filePath.replace(/\\/g, "/");
+
+    if (typeof value === "string") {
+      result[normalizedPath] = value;
+    } else if (value && typeof value.content === "string") {
+      result[normalizedPath] = value.content;
     }
   }
 
   return result;
 }
 
-/**
- * Main project analyzer.
- */
 function analyzeProject(files) {
   const filePaths = Object.keys(files);
 
   const packageJson = readPackageJson(files);
+
   const packageScripts = packageJson?.scripts || {};
+
   const dependencies = {
     ...(packageJson?.dependencies || {}),
     ...(packageJson?.devDependencies || {}),
@@ -85,15 +83,21 @@ function analyzeProject(files) {
 
   const framework = detectFramework(files, packageJson);
   const language = detectLanguage(filePaths);
-  const projectType = detectProjectType(files, packageJson, framework);
+  const projectType = detectProjectType(
+    files,
+    packageJson,
+    framework
+  );
 
   const buildCommand = detectBuildCommand(
     packageJson,
-    framework,
-    files
+    framework
   );
 
-  const startCommand = detectStartCommand(packageJson, framework);
+  const startCommand = detectStartCommand(
+    packageJson,
+    framework
+  );
 
   return {
     version: 1,
@@ -104,12 +108,15 @@ function analyzeProject(files) {
       frameworkVersion: framework.version || null,
       language,
       packageManager: detectPackageManager(filePaths),
-      entryPoints: detectEntryPoints(filePaths, framework),
+      entryPoints: detectEntryPoints(
+        filePaths,
+        framework
+      ),
       buildCommand,
       startCommand
     },
 
-    framework: framework,
+    framework,
 
     package: packageJson
       ? {
@@ -137,9 +144,11 @@ function analyzeProject(files) {
     requirements: {
       needsInstall: Boolean(packageJson),
       needsBuild: Boolean(buildCommand),
-      isStatic: projectType === 'static-html',
+      isStatic: projectType === "static-html",
       isNodeProject: Boolean(packageJson),
-      hasTypeScript: filePaths.some(p => /\.(ts|tsx)$/i.test(p)),
+      hasTypeScript: filePaths.some(
+        p => /\.(ts|tsx)$/i.test(p)
+      ),
       hasReact: Boolean(dependencies.react),
       hasNext: Boolean(dependencies.next),
       hasVite: Boolean(dependencies.vite)
@@ -147,35 +156,33 @@ function analyzeProject(files) {
 
     build: {
       command: buildCommand,
-      outputDirectory: detectOutputDirectory(framework, packageJson, files),
+      outputDirectory: detectOutputDirectory(
+        framework,
+        packageJson,
+        files
+      ),
       productionReady: Boolean(buildCommand)
     }
   };
 }
 
-/**
- * Read package.json safely.
- */
 function readPackageJson(files) {
   const packagePath = Object.keys(files).find(
-    p => p.toLowerCase() === 'package.json'
+    p => p.toLowerCase() === "package.json"
   );
 
   if (!packagePath) return null;
 
   try {
     return JSON.parse(files[packagePath]);
-  } catch (error) {
+  } catch {
     return {
       __invalid: true,
-      __error: 'Invalid package.json'
+      __error: "Invalid package.json"
     };
   }
 }
 
-/**
- * Detect framework.
- */
 function detectFramework(files, pkg) {
   const deps = {
     ...(pkg?.dependencies || {}),
@@ -185,10 +192,13 @@ function detectFramework(files, pkg) {
 
   const paths = Object.keys(files);
 
-  if (deps.next || paths.some(p => p.includes('next.config.'))) {
+  if (
+    deps.next ||
+    paths.some(p => p.includes("next.config."))
+  ) {
     return {
-      name: 'next',
-      type: 'framework',
+      name: "next",
+      type: "framework",
       version: deps.next || null
     };
   }
@@ -201,48 +211,67 @@ function detectFramework(files, pkg) {
     )
   ) {
     return {
-      name: 'react-vite',
-      type: 'framework',
-      version: deps.react
+      name: "react-vite",
+      type: "framework",
+      version: deps.react || null
     };
   }
 
   if (deps.react) {
     return {
-      name: 'react',
-      type: 'library',
-      version: deps.react
+      name: "react",
+      type: "library",
+      version: deps.react || null
     };
   }
 
-  if (deps.vue || deps.nuxt) {
+  if (deps.nuxt) {
     return {
-      name: deps.nuxt ? 'nuxt' : 'vue',
-      type: 'framework',
-      version: deps.nuxt || deps.vue || null
+      name: "nuxt",
+      type: "framework",
+      version: deps.nuxt
     };
   }
 
-  if (deps.svelte || deps['@sveltejs/kit']) {
+  if (deps.vue) {
     return {
-      name: deps['@sveltejs/kit'] ? 'sveltekit' : 'svelte',
-      type: 'framework',
-      version: deps['@sveltejs/kit'] || deps.svelte || null
+      name: "vue",
+      type: "framework",
+      version: deps.vue
     };
   }
 
-  if (deps.angular || deps['@angular/core']) {
+  if (deps["@sveltejs/kit"]) {
     return {
-      name: 'angular',
-      type: 'framework',
-      version: deps['@angular/core'] || deps.angular || null
+      name: "sveltekit",
+      type: "framework",
+      version: deps["@sveltejs/kit"]
     };
   }
 
-  if (deps.vite || paths.some(p => /vite\.config\./i.test(p))) {
+  if (deps.svelte) {
     return {
-      name: 'vite',
-      type: 'build-tool',
+      name: "svelte",
+      type: "framework",
+      version: deps.svelte
+    };
+  }
+
+  if (deps["@angular/core"]) {
+    return {
+      name: "angular",
+      type: "framework",
+      version: deps["@angular/core"]
+    };
+  }
+
+  if (
+    deps.vite ||
+    paths.some(p => /vite\.config\./i.test(p))
+  ) {
+    return {
+      name: "vite",
+      type: "build-tool",
       version: deps.vite || null
     };
   }
@@ -252,8 +281,8 @@ function detectFramework(files, pkg) {
     !pkg
   ) {
     return {
-      name: 'react-like',
-      type: 'detected',
+      name: "react-like",
+      type: "detected",
       version: null
     };
   }
@@ -262,167 +291,193 @@ function detectFramework(files, pkg) {
     paths.some(p => /\.(ts|tsx)$/i.test(p))
   ) {
     return {
-      name: 'typescript',
-      type: 'language',
+      name: "typescript",
+      type: "language",
       version: deps.typescript || null
     };
   }
 
-  if (paths.some(p => /\.html?$/i.test(p))) {
+  if (
+    paths.some(p => /\.html?$/i.test(p))
+  ) {
     return {
-      name: 'html',
-      type: 'static',
+      name: "html",
+      type: "static",
       version: null
     };
   }
 
   return {
-    name: 'unknown',
-    type: 'unknown',
+    name: "unknown",
+    type: "unknown",
     version: null
   };
 }
 
-/**
- * Detect language.
- */
 function detectLanguage(paths) {
   const counts = {};
 
+  const languageMap = {
+    ".js": "JavaScript",
+    ".jsx": "JavaScript/JSX",
+    ".ts": "TypeScript",
+    ".tsx": "TypeScript/TSX",
+    ".html": "HTML",
+    ".htm": "HTML",
+    ".css": "CSS",
+    ".scss": "SCSS",
+    ".sass": "Sass",
+    ".less": "Less",
+    ".vue": "Vue",
+    ".svelte": "Svelte",
+    ".json": "JSON"
+  };
+
   for (const file of paths) {
     const ext = getExtension(file);
-
-    if (!ext) continue;
-
-    const languageMap = {
-      '.js': 'JavaScript',
-      '.jsx': 'JavaScript/JSX',
-      '.ts': 'TypeScript',
-      '.tsx': 'TypeScript/TSX',
-      '.html': 'HTML',
-      '.htm': 'HTML',
-      '.css': 'CSS',
-      '.scss': 'SCSS',
-      '.sass': 'Sass',
-      '.less': 'Less',
-      '.vue': 'Vue',
-      '.svelte': 'Svelte',
-      '.json': 'JSON'
-    };
-
     const language = languageMap[ext];
 
     if (language) {
-      counts[language] = (counts[language] || 0) + 1;
+      counts[language] =
+        (counts[language] || 0) + 1;
     }
   }
 
   return Object.entries(counts)
     .sort((a, b) => b[1] - a[1])
-    .map(([name, count]) => ({ name, count }));
+    .map(([name, count]) => ({
+      name,
+      count
+    }));
 }
 
-/**
- * Detect project type.
- */
 function detectProjectType(files, pkg, framework) {
   if (pkg) {
-    if (framework.name === 'next') return 'next-app';
-    if (framework.name === 'react-vite') return 'react-vite-app';
-    if (framework.name === 'react') return 'react-app';
-    if (framework.name === 'vue') return 'vue-app';
-    if (framework.name === 'nuxt') return 'nuxt-app';
-    if (framework.name === 'svelte') return 'svelte-app';
-    if (framework.name === 'sveltekit') return 'sveltekit-app';
-    if (framework.name === 'angular') return 'angular-app';
-    if (framework.name === 'vite') return 'vite-app';
+    if (framework.name === "next") {
+      return "next-app";
+    }
 
-    return 'node-project';
-  }
+    if (framework.name === "react-vite") {
+      return "react-vite-app";
+    }
 
-  if (Object.keys(files).some(p => /\.html?$/i.test(p))) {
-    return 'static-html';
-  }
+    if (framework.name === "react") {
+      return "react-app";
+    }
 
-  return 'unknown';
-}
+    if (framework.name === "vue") {
+      return "vue-app";
+    }
 
-/**
- * Detect package manager.
- */
-function detectPackageManager(paths) {
-  if (paths.includes('pnpm-lock.yaml')) return 'pnpm';
-  if (paths.includes('yarn.lock')) return 'yarn';
-  if (paths.includes('bun.lockb') || paths.includes('bun.lock')) return 'bun';
-  if (paths.includes('package-lock.json')) return 'npm';
+    if (framework.name === "nuxt") {
+      return "nuxt-app";
+    }
 
-  return 'npm';
-}
+    if (framework.name === "svelte") {
+      return "svelte-app";
+    }
 
-/**
- * Detect build command.
- */
-function detectBuildCommand(pkg, framework, files) {
-  if (!pkg || !pkg.scripts) return null;
+    if (framework.name === "sveltekit") {
+      return "sveltekit-app";
+    }
 
-  if (typeof pkg.scripts.build === 'string') {
-    return 'npm run build';
-  }
+    if (framework.name === "angular") {
+      return "angular-app";
+    }
 
-  if (framework.name === 'next') {
-    return 'npm run build';
+    if (framework.name === "vite") {
+      return "vite-app";
+    }
+
+    return "node-project";
   }
 
   if (
-    framework.name === 'vite' ||
-    framework.name === 'react-vite'
+    Object.keys(files).some(
+      p => /\.html?$/i.test(p)
+    )
   ) {
-    return 'npm run build';
+    return "static-html";
+  }
+
+  return "unknown";
+}
+
+function detectPackageManager(paths) {
+  if (paths.includes("pnpm-lock.yaml")) {
+    return "pnpm";
+  }
+
+  if (paths.includes("yarn.lock")) {
+    return "yarn";
+  }
+
+  if (
+    paths.includes("bun.lockb") ||
+    paths.includes("bun.lock")
+  ) {
+    return "bun";
+  }
+
+  return "npm";
+}
+
+function detectBuildCommand(pkg, framework) {
+  if (!pkg || !pkg.scripts) {
+    return null;
+  }
+
+  if (typeof pkg.scripts.build === "string") {
+    return "npm run build";
+  }
+
+  if (
+    framework.name === "next" ||
+    framework.name === "vite" ||
+    framework.name === "react-vite"
+  ) {
+    return "npm run build";
   }
 
   return null;
 }
 
-/**
- * Detect start command.
- */
 function detectStartCommand(pkg, framework) {
-  if (!pkg || !pkg.scripts) return null;
-
-  if (pkg.scripts.start) {
-    return 'npm start';
+  if (!pkg || !pkg.scripts) {
+    return null;
   }
 
-  if (framework.name === 'next') {
-    return 'npm start';
+  if (pkg.scripts.start) {
+    return "npm start";
+  }
+
+  if (framework.name === "next") {
+    return "npm start";
   }
 
   if (pkg.scripts.dev) {
-    return 'npm run dev';
+    return "npm run dev";
   }
 
   return null;
 }
 
-/**
- * Detect likely entry points.
- */
 function detectEntryPoints(paths, framework) {
   const candidates = [];
 
   const preferred = [
-    'index.html',
-    'src/main.jsx',
-    'src/main.tsx',
-    'src/main.js',
-    'src/main.ts',
-    'src/index.jsx',
-    'src/index.tsx',
-    'src/index.js',
-    'src/index.ts',
-    'pages/index.js',
-    'pages/index.tsx',
-    'app/page.tsx'
+    "index.html",
+    "src/main.jsx",
+    "src/main.tsx",
+    "src/main.js",
+    "src/main.ts",
+    "src/index.jsx",
+    "src/index.tsx",
+    "src/index.js",
+    "src/index.ts",
+    "pages/index.js",
+    "pages/index.tsx",
+    "app/page.tsx"
   ];
 
   for (const file of preferred) {
@@ -431,9 +486,11 @@ function detectEntryPoints(paths, framework) {
     }
   }
 
-  if (framework.name === 'next') {
+  if (framework.name === "next") {
     for (const file of paths) {
-      if (/^(app|pages)\/.+\.(js|jsx|ts|tsx)$/i.test(file)) {
+      if (
+        /^(app|pages)\/.+\.(js|jsx|ts|tsx)$/i.test(file)
+      ) {
         candidates.push(file);
       }
     }
@@ -442,58 +499,61 @@ function detectEntryPoints(paths, framework) {
   return [...new Set(candidates)];
 }
 
-/**
- * Detect Vite/Next output directory.
- */
-function detectOutputDirectory(framework, pkg, files) {
-  if (framework.name === 'next') {
-    return '.next';
+function detectOutputDirectory(
+  framework,
+  pkg,
+  files
+) {
+  if (framework.name === "next") {
+    return ".next";
   }
 
   if (
-    framework.name === 'vite' ||
-    framework.name === 'react-vite'
+    framework.name === "vite" ||
+    framework.name === "react-vite"
   ) {
-    return 'dist';
+    return "dist";
   }
 
   if (pkg?.scripts?.build) {
-    return 'dist';
+    return "dist";
   }
 
-  if (Object.keys(files).some(p => p === 'index.html')) {
-    return '.';
+  if (
+    Object.keys(files).some(
+      p => p === "index.html"
+    )
+  ) {
+    return ".";
   }
 
   return null;
 }
 
-/**
- * Analyze HTML files.
- */
 function analyzeHTMLFiles(files) {
   const result = [];
 
   for (const [filePath, content] of Object.entries(files)) {
-    if (!/\.html?$/i.test(filePath)) continue;
-
-    const analysis = analyzeHTML(content);
+    if (!/\.html?$/i.test(filePath)) {
+      continue;
+    }
 
     result.push({
       path: filePath,
-      ...analysis
+      ...analyzeHTML(content)
     });
   }
 
   return result;
 }
 
-/**
- * HTML analyzer.
- */
 function analyzeHTML(html) {
   const title =
-    (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || null;
+    (
+      html.match(
+        /<title[^>]*>([\s\S]*?)<\/title>/i
+      ) || []
+    )[1] || null;
 
   const scripts =
     html.match(/<script[^>]*>/gi) || [];
@@ -506,18 +566,22 @@ function analyzeHTML(html) {
 
   const elements = {};
 
-  const regex = /<([a-zA-Z][a-zA-Z0-9-]*)\b/g;
+  const regex =
+    /<([a-zA-Z][a-zA-Z0-9-]*)\b/g;
 
   let match;
 
   while ((match = regex.exec(html))) {
     const tag = match[1].toLowerCase();
 
-    if (['script', 'style', 'meta', 'link'].includes(tag)) {
+    if (
+      ["script", "style", "meta", "link"].includes(tag)
+    ) {
       continue;
     }
 
-    elements[tag] = (elements[tag] || 0) + 1;
+    elements[tag] =
+      (elements[tag] || 0) + 1;
   }
 
   return {
@@ -526,7 +590,11 @@ function analyzeHTML(html) {
     hasHead: /<head[\s>]/i.test(html),
     hasBody: /<body[\s>]/i.test(html),
     language:
-      (html.match(/<html[^>]+lang=["']([^"']+)/i) || [])[1] || null,
+      (
+        html.match(
+          /<html[^>]+lang=["']([^"']+)/i
+        ) || []
+      )[1] || null,
     scriptCount: scripts.length,
     styleCount: styles.length,
     linkCount: links.length,
@@ -534,19 +602,18 @@ function analyzeHTML(html) {
   };
 }
 
-/**
- * Analyze source files.
- */
 function analyzeSourceFiles(files) {
   const result = [];
 
   for (const [filePath, content] of Object.entries(files)) {
-    if (!isSourceFile(filePath)) continue;
+    if (!isSourceFile(filePath)) {
+      continue;
+    }
 
     result.push({
       path: filePath,
       extension: getExtension(filePath),
-      size: Buffer.byteLength(content, 'utf8'),
+      size: Buffer.byteLength(content, "utf8"),
       lines: content.split(/\r?\n/).length
     });
   }
@@ -554,23 +621,28 @@ function analyzeSourceFiles(files) {
   return result;
 }
 
-/**
- * Count file extensions.
- */
 function countExtensions(paths) {
   const result = {};
 
-  for (const path of paths) {
-    const ext = getExtension(path) || '[no extension]';
-    result[ext] = (result[ext] || 0) + 1;
+  for (const filePath of paths) {
+    const ext =
+      getExtension(filePath) ||
+      "[no extension]";
+
+    result[ext] =
+      (result[ext] || 0) + 1;
   }
 
   return result;
 }
 
 function getExtension(filePath) {
-  const match = filePath.toLowerCase().match(/(\.[a-z0-9]+)$/);
-  return match ? match[1] : '';
+  const match =
+    filePath
+      .toLowerCase()
+      .match(/(\.[a-z0-9]+)$/);
+
+  return match ? match[1] : "";
 }
 
 function isSourceFile(filePath) {
@@ -585,4 +657,5 @@ function isAssetFile(filePath) {
   );
 }
 
-module.exports = router;
+export default router;
+```
