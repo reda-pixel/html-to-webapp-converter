@@ -1,28 +1,26 @@
 {
   "name": "html-to-webapp-converter",
   "version": "1.0.0",
-  "description": "تحويل ملفات HTML إلى مشاريع ويب كاملة قابلة للتشغيل والبناء والنشر",
+  "description": "تحويل المشاريع إلى تطبيقات ويب قابلة للبناء والتشغيل والنشر",
   "type": "module",
   "main": "server/index.js",
   "scripts": {
-    "dev": "npm run dev:server & npm run dev:client",
-    "dev:server": "cd server && npm run dev",
-    "dev:client": "cd client && npm run dev",
+    "start": "node server/index.js",
+    "server": "node server/index.js",
     "build": "cd client && npm run build",
-    "server": "cd server && node index.js",
-    "start": "cd server && node index.js",
     "test:workflow": "node test-workflow.js"
   },
   "keywords": [
     "html",
-    "converter",
     "webapp",
+    "converter",
     "build",
     "deploy"
   ],
   "author": "reda-pixel",
   "license": "MIT",
-  "devDependencies": {
-    "form-data": "^4.0.0"
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0"
   }
 }
